@@ -1,0 +1,261 @@
+---
+title: "Car Fuel Consumption on Kaggle"
+author: "Joshua Manalo"
+date: "October 31, 2018"
+output: 
+  pdf_document:
+    toc: true
+---
+```{r include = FALSE}
+#Loading librarys and data
+library(ggplot2)
+
+data <- read.csv("measurements.csv")
+summary(data)
+
+
+e10.data <- data[which(data$gas_type =="E10"),]
+sp98.data <- data[which(data$gas_type =="SP98"),]
+
+```
+# 1. Introduction
+
+The following data came from [Kaggle](https://www.kaggle.com/anderas/car-consume/version/5). The owner of the data obtained the observations from the  car's display after each ride while regularly changing the gas type.
+
+The main question of the owner is to know which of the 2 gases are cheaper? E10(SP95) or Sp98?
+E10 (SP95) is "super gas" with 10% Ethanol, and is sold for 1.38 Euros/Litre
+While SP98 is sold for 1.46 Euros/Litre 
+
+The data analysis will be done in Rstudio and Rmarkdown.
+
+# 2. Data Structure
+In the data we have the following variables:<br/> 
+
+Variable | Description
+------------- | -------------
+Distance | distance travelled in kilometres (kms)
+Consume | Litres per 100 kms (L/100km)
+Speed | Average speed in kilometres per hour (km/h)
+Temp_inside | The temperature inside the car (c)
+Temp_outside| The temperature outside the car (c)
+Gas Type    | E10 and SP98
+AC          | 1 if on; 0 if off
+Rain        | 1 if on; 0 if off
+Sun         | 1 if sunny enough; 0 if not sunny/hot enough
+
+
+There are **388 observations**. Therefore there were 388 trips made by the owner at the time of this data analysis. 
+<br><br>
+
+# 3.Preparations
+I decided to focus on **Consume** as my target variable.
+To start my analysis, I checked which of the variables are highly significant to Consumption 
+
+
+First I **divided the data into 2 gas types (E10 and SP98)**. By fitting a regression with Consumption as my dependent variable.
+```{r,comment=""}
+e10.fit <- lm(consume ~ speed+distance+temp_inside+temp_outside+AC+rain+sun,data=e10.data)
+round(summary(e10.fit)$coeff,3)
+
+sp98.fit <- lm(consume ~ speed+distance+temp_inside+temp_outside+AC+rain+sun,data=sp98.data)
+round(summary(sp98.fit)$coeff,3)
+```
+
+From my regression models, it shows that the variables that are significant to Consumption are **Speed**, **Temperature Outside** and **Rain**. 
+
+
+### 3.1. Temperature Outside Variable
+When comparing temperature outside recorded between the 2 gas types, I noticed the following:
+```{r,echo=FALSE,comment=""}
+cat(('E10 Temperature Outside Observations Summary'))
+summary(e10.data$temp_outside)
+cat(('SP98 Temperature Outside Observations Summary'))
+summary(sp98.data$temp_outside)
+t.test <- t.test(e10.data$temp_outside,sp98.data$temp_outside,var.equal = T)
+(data.frame(t.test$statistic,t.test$p.value))
+
+```
+Since **p-value < 0.05** We reject the null and confirm that **there is a significant difference between the E10 and SP98 temperature outside means**.
+This tells us that both gas types have not been used in similar temperatures.
+Therefore I standardize the variable by determining the range of temperature outside we will observe.
+
+### 3.2. Distance Variable
+```{r,echo=FALSE, fig.align="center",comment=""}
+cat(('E10 Distance Observations Summary'))
+summary(e10.data$distance)
+cat(('SP98 Distance Observations Summary'))
+summary(sp98.data$distance)
+e10 <- data.frame(gas_type ="E10",distance = e10.data$distance)
+sp98 <- data.frame(gas_type ="SP98" ,distance = sp98.data$distance)
+
+sub.data <- rbind(e10,sp98)
+ggplot(sub.data, aes(x=gas_type,y=distance,fill=gas_type))+
+  ggtitle("Comparing Distance travelled between gas types")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  stat_boxplot(geom = "errorbar", width = 0.5) + 
+  geom_boxplot()
+
+```
+We see that there is quite a **few outliers from the E10 and SP98 distance observations**.
+This can influence the consume variable (Since consume is L/100kms) so we standardize the variable by determining the range of distance we will observe.
+
+### 3.3. Rain Variable
+```{r echo = FALSE,comment=""}
+cat('E10 Rain count')
+table(e10.data$rain)
+cat('SP98 Rain count')
+table(sp98.data$rain)
+```
+We notice that **not a lot of data have been recorded with rain**.
+This is quite unfortunate since rain is a factor that has an impact on the consume variable
+<br><br>
+
+# 4. Simple Visualizations
+### 4.1. Consumption
+
+```{r ,echo=FALSE, fig.align="center",warning=FALSE}
+e10 <- data.frame(gas_type ="E10",consumption = e10.data$consume)
+sp98 <- data.frame(gas_type ="SP98" ,consumption = sp98.data$consume)
+
+sub.data <- rbind(e10,sp98)
+means <- aggregate(consumption~gas_type,sub.data,mean)
+means$consumption <- round(means$consumption,3)
+ggplot(sub.data, aes(x=gas_type,y=consumption,fill=gas_type))+
+  ggtitle("Overall Gas Consumption")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  stat_boxplot(geom = "errorbar", width = 0.5) + 
+  geom_boxplot()+
+  stat_summary(fun.y=mean, colour="darkred", geom="point", shape=18, size=3,show_guide=F) + 
+  geom_text(data = means, aes(label = consumption, y = consumption + 0.08))
+```
+
+
+There is slightly higher average consumption for **E10 (4.931L/100km)** than **SP98 (4.899L/100km)** when we include all
+observations.
+<br><br>
+
+### 4.2. Gas Consumption with distance
+Earlier we saw outliers for distance between gas types. This can influence consumption so we standardize the variable by determining the range of distance we will observe.
+
+I decide to **restrict the range between 11kms to 18kms**.
+
+```{r echo=FALSE, fig.align="center",warning=FALSE}
+norm.e10.data <- data[which(data$distance <= 18 & data$distance >= 11 & data$gas_type =="E10"),]
+norm.sp98.data <- data[which(data$distance <= 18 & data$distance >= 11 & data$gas_type =="SP98"),]
+
+e10 <- data.frame(gas_type ="E10",consumption = norm.e10.data$consume)
+sp98 <- data.frame(gas_type ="SP98" ,consumption = norm.sp98.data$consume)
+
+sub.data <- rbind(e10,sp98)
+
+means <- aggregate(consumption~gas_type,sub.data,mean)
+means$consumption <- round(means$consumption,3)
+
+ggplot(sub.data, aes(x=gas_type,y=consumption,fill=gas_type))+
+  ggtitle("Comparing Gas Type Consumption \n when Distance travelled is between 11kms to 18kms")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  stat_boxplot(geom = "errorbar", width = 0.5) + 
+  geom_boxplot()+
+  stat_summary(fun.y=mean, colour="darkred", geom="point", shape=18, size=3,show_guide=F) + 
+  geom_text(data = means, aes(label = consumption, y = consumption + 0.08))
+
+```
+There is slightly higher average consumption for **E10 (4.788L/100km)** than **SP98 (4.755L/100km)** when we only use data observations where distance travelled is between 11kms to 18kms
+<br><br>
+
+### 4.3. Gas Consumption with distance and temperature outside
+We check what happens when temp outside is standardized. 
+We fix the range because earlier saw the means of temperature outside between the fuel consumption were not equal.
+
+I decide to **restrict the range between 7c to 14c**.
+	
+```{r echo=FALSE, fig.align="center",warning=FALSE}
+norm.e10.temp.data <- data[which(data$temp_outside <= 14 & data$temp_outside >= 7 & data$gas_type =="E10"
+                                 & data$distance <= 18 & data$distance >= 11),]
+
+norm.sp98.temp.data <- data[which(data$temp_outside <= 14 & data$temp_outside >= 7 & data$gas_type =="SP98"
+                                  & data$distance <= 18 & data$distance >= 11),]
+
+e10 <- data.frame(gas_type ="E10",consumption = as.numeric(norm.e10.temp.data$consume))
+sp98 <- data.frame(gas_type ="SP98" ,consumption = as.numeric(norm.sp98.temp.data$consume))
+
+sub.data <- rbind(e10,sp98)
+means <- aggregate(consumption~gas_type,sub.data,mean)
+means$consumption <- round(means$consumption,3)
+
+ggplot(sub.data, aes(x=gas_type,y=consumption,fill=gas_type))+
+  ggtitle("Comparing Gas Type Consumption \n when Temperature Outside is between 7c to 14c \n and distance is between 11kms to 18kms")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  stat_boxplot(geom = "errorbar", width = 0.5) + 
+  geom_boxplot()+
+  stat_summary(fun.y=mean, colour="darkred", geom="point", shape=18, size=3,show_guide=F) + 
+  geom_text(data = means, aes(label = consumption, y = consumption + 0.08))
+```
+
+
+There is slightly higher average consumption for **SP98 (4.935L/100km)** than **E10 (4.758L/100km)** when we only use data between 7c to 14c and distance travelled is between 11kms to 18kms
+<br><br>
+
+### 4.4. Gas consumption with distance, temperature outside, and rain
+```{r echo=FALSE, fig.align="center",warning=FALSE}
+norm.e10.temp.rain.data <- data[which(data$temp_outside <= 14 & data$temp_outside >= 7 & data$gas_type =="E10"
+                                 & data$distance <= 18 & data$distance >= 11 & data$rain==0),]
+
+norm.sp98.temp.rain.data <- data[which(data$temp_outside <= 14 & data$temp_outside >= 7 & data$gas_type =="SP98"
+                                  & data$distance <= 18 & data$distance >= 11 & data$rain==0),]
+
+e10 <- data.frame(gas_type ="E10",consumption = as.numeric(norm.e10.temp.rain.data$consume))
+sp98 <- data.frame(gas_type ="SP98" ,consumption = as.numeric(norm.sp98.temp.rain.data$consume))
+
+sub.data <- rbind(e10,sp98)
+means <- aggregate(consumption~gas_type,sub.data,mean)
+means$consumption <- round(means$consumption,3)
+
+ggplot(sub.data, aes(x=gas_type,y=consumption,fill=gas_type))+
+  ggtitle("Boxplot of Gas Consumption by Gas Type \n when Temperature Outside is between \n7c and 14c and Rain is not present")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  stat_boxplot(geom = "errorbar", width = 0.5) + 
+  geom_boxplot()+
+  stat_summary(fun.y=mean, colour="darkred", geom="point", shape=18, size=3,show_guide=F) + 
+  geom_text(data = means, aes(label = consumption, y = consumption + 0.08))
+
+#A form of standardizing data
+norm.e10.temp.rain.data <- data[which(data$temp_outside <= 14 & data$temp_outside >= 7 & data$gas_type =="E10"
+                                      & data$distance <= 18 & data$distance >= 11 & data$rain==1),]
+
+norm.sp98.temp.rain.data <- data[which(data$temp_outside <= 14 & data$temp_outside >= 7 & data$gas_type =="SP98"
+                                       & data$distance <= 18 & data$distance >= 11 & data$rain==1),]
+
+e10 <- data.frame(gas_type ="E10",consumption = as.numeric(norm.e10.temp.rain.data$consume))
+sp98 <- data.frame(gas_type ="SP98" ,consumption = as.numeric(norm.sp98.temp.rain.data$consume))
+
+sub.data <- rbind(e10,sp98)
+means <- aggregate(consumption~gas_type,sub.data,mean)
+means$consumption <- round(means$consumption,3)
+
+ggplot(sub.data, aes(x=gas_type,y=consumption,fill=gas_type))+
+  ggtitle("Boxplot of Gas Consumption by Gas Type \n when Temperature Outside is between \n7c and 14c and Rain is present")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  stat_boxplot(geom = "errorbar", width = 0.5) + 
+  geom_boxplot()+
+  stat_summary(fun.y=mean, colour="darkred", geom="point", shape=18, size=3,show_guide=F) + 
+  geom_text(data = means, aes(label = consumption, y = consumption + 0.08))
+```
+<br><br>
+
+There is slightly higher average consumption for **SP98 (4.854L/100km)** than **E10 (4.732L/100km)** when we only use data between 7c to 14c, distance travelled is between 11kms to 18kms, and not raining.
+
+There is slightly higher average consumption for **SP98 (5.344L/100km)** than **E10 (4.9L/100km)** when we only use data between 7c to 14c, distance travelled is between 11kms to 18kms, and is raining.
+
+*Please note the higher variance in the boxplot models as there are not many observations were recorded for when rain was present.
+<br><br>
+
+# 5. Conclusion
+The first 2 graphs showed the gas type SP98 on average had less consumption than the E10 gas type.\
+However when we take into account the differences in temperature outside and distance outliers by fixing its range, we see that E10 gas type consumes slightly less than SP98. This shows on our final 3 graphs.
+
+**Therefore we can safely conclude that E10 (SP95) is a much cheaper alternative gas for your car.**
+
+# 6. Future Project
+Some departing ideas to build on, we can compare observations between gas types when temperature outside is in a much colder season (i.e between -20 to 0).\
+We can also analyze in depth our regression models and see which gas types are more affected by outside variables such as weather.
